@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # Define colors...
 RED=`tput bold && tput setaf 1`
@@ -19,95 +19,175 @@ function YELLOW(){
 function BLUE(){
 	echo -e "\n${BLUE}${1}${NC}"
 }
+function CheckError(){
+	if [ $? -eq 1 ] || [ $ERRORFLAG -eq 1 ]
+	then
+		RED "[-]${NC} $@"
+		exit 1
+	fi
+}
+function SHOWHELPANDEXIT(){
+	echo "${BLUE}Usage: sudo ./ignition_key.sh [user_id{1000-1500}]${NC}\nLeave black to use default user_id: 1000"
+	exit 0
+}
+
+if [ $1 = -h ] || [ $1 = --help ]
+then
+	SHOWHELPANDEXIT
+fi
 
 # Testing if root...
 if [ $UID -ne 0 ]
 then
-	RED "You must run this script as root!" && echo
-	exit
+	RED "You must run this script as root!"
+	exit 1
 fi
 
+LOGINUSERID=1000
 
+if [ $1 -gt 999 ] && [ $1 -lt 1501 ]
+then 
+	LOGINUSERID=$1
+fi
+
+echo $LOGINUSERID
+LOGINUSER=$(id -nu $LOGINUSERID) 2>/dev/null
+CheckError "Not a valid user. You used $LOGINUSERID"
+
+if [ $SHELL = '/bin/zsh' ] || [ $SHELL = '/usr/bin/bash' ]
+then
+	BLUE "USING ZSH"
+else
+	RED "USING BASH"
+fi
+
+shellrc=(~/.bashrc)
+
+
+if [ ! -e added.repos ] # Stop adding repos 10000 times
+then
+	BLUE "Set up repositories"
+	BLUE "Adding sublime-text repo"
+	wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg | sudo apt-key add -
+	echo "deb https://download.sublimetext.com/ apt/stable/" | sudo tee /etc/apt/sources.list.d/sublime-text.list
+	sudo add-apt-repository ppa:ts.sch.gr/ppa
+
+	touch added.repos 
+fi
 
 BLUE "Updating repositories..."
 sudo apt update
 
-BLUE "Installing git..."
-sudo apt install -y git
+BoilerDirectories=('Documents' 'Music' 'Pictures' 'Public' 'Templates' 'Videos') 
 
-BLUE "Installing Sublime Text..." # according to https://www.sublimetext.com/docs/3/linux_repositories.html-
-wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg | sudo apt-key add -
-sudo apt-get install -y apt-transport-https
-echo "deb https://download.sublimetext.com/ apt/stable/" | sudo tee /etc/apt/sources.list.d/sublime-text.list
-sudo apt-get update
-sudo apt-get install -y sublime-text
+PythonVersonNumber=3
 
-BLUE "Installing terminator..."
-sudo apt install -y terminator
+PythonPackages=('python3-full' 'python3-pip' 'python3-dev' 'build-essential' 'python3-doc' 'python-is-python3' 'python3-requests' 'python-dev-is-python3' 'python3-venv' 'idle' 'python3-pil' 'python3-requests')
+
+PythonModuleNames=('flask' 'flask-login' 'colorama' 'passlib' 'pwntools' 'netifaces' 'iptools' 'pyopenssl' 'pydispatch' 'scapy')
+
+PackageNames=('git' 'nmap' 'terminator' 'apt-transport-https' 'sublime-text' 'simplescreenrecorder' 'taskwarrior' 'guake' 'openvpn' 'docker.io' 'curl' 'pinta' 'exiftool'  'sqlitebrowser' 'wireshark' 'xclip' 'binwalk' 'tesseract-ocr' 'foremost' 'bsdgames' 'hexedit' 'golang' 'golang-go' 'sqlite' 'nikto' 'zbar-tools' 'qrencode' 'pdfcrack' 'virtualbox-qt' 'vagrant' 'fcrackzip' 'unrar' 'steghide' 'ffmpeg' 'gimp' 'cmake' 'mplayer' 'sshpass' 'tcpflow' 'tcpdump' 'libcompress-raw-lzma-perl' 'oracle-java8-installer' 'zsh' 'zsh-syntax-highlighting' 'zsh-common' 'zsh-dev' 'zsh-doc' 'zsh-static' 'zsh-autosuggestions'
+	)
+
+
+
+
+BLUE 'Installing Python Packages...'
+for name in $PythonNames
+do
+	BLUE "Installing $name..."
+	apt-get install -y $name --install-suggests
+	CheckError "Failed to install: $(name)"
+done
+
+BLUE 'Installing Python Modules...'
+for name in $PythonModuleNames
+do
+	BLUE "Installing $name..."
+	pip install $name
+	CheckError "Failed to install: $(name)"
+done
+
+BLUE 'Installing General Packages...'
+for name in $PackageNames
+do
+	BLUE "Installing $name..."
+	apt install -y $name
+	CheckError "Failed to install: $(name)"
+done
+
+BLUE "Removing boilerplate home directories..."
+for dir in $BoilerDirectories
+do
+	BLUE "Removing $dir..."
+	rmdir ~/$dir
+done
+
+BLUE "Adding xclip alias..."
+grep "alias xclip" ~/.bashrc
+if [ $? -eq 1 ]
+then
+	echo "alias xclip='xclip -selection clipboard'" >> $shellrc
+fi
+
+BlUE "Adding GIT default credentials"
+git config --global user.name "Ozy-Viking"
+git config --global user.email "zthankin@gmail.com"
 
 BLUE "Setting terminator as the default terminal emulator..."
 sed -i s/Exec=gnome-terminal/Exec=terminator/g /usr/share/applications/gnome-terminal.desktop
 
-BLUE "Forcing a color prompt in ~/.bashrc..."
-grep "export PS1" ~/.bashrc
-if [ $? -eq 1 ]
+BLUE "Installing Spotify..."
+sudo snap install spotify
+
+BLUE "Adding self to docker..."
+sudo groupadd docker
+sudo usermod -aG docker $(LOGINUSER)
+if [ 'docker' = "$(id -nG 1000 | grep docker)" ]
 then
-	echo "export PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '" >> ~/.bashrc
+	ERRORFLAG=1
+	CheckError "Failed to join docker group.\nCurrent Groups: $(id -nG 1000)"
 fi
 
-BLUE "Installing SimpleScreenRecorder..."
-echo "" | sudo add-apt-repository ppa:maarten-baert/simplescreenrecorder
-sudo apt-get update
-sudo apt-get install -y simplescreenrecorder
+BLUE "Adding GOPATH and GOBIN to .bashrc, so future installs are easy.."
+grep "export GOPATH" $shellrc
+if [ $? -eq 1 ]
+then
+	echo "export GOPATH=\$HOME/.go/" >> $shellrc
+fi
+grep "export GOBIN" $shellrc
+if [ $? -eq 1 ]
+then
+	echo "export GOBIN=\$HOME/.go/bin" >> $shellrc
+	echo "export PATH=\$PATH:\$GOBIN" >> $shellrc
+fi
 
-BLUE "Installing task..."
-sudo apt-get install -y taskwarrior
+BLUE 'Installing Discord'
+wget 'https://discord.com/api/download?platform=linux&format=deb' -O discord.deb
+dpkg -i discord.deb
+rm discord.deb
 
-BLUE "Installing pip..."
-sudo apt-get install -y python-pip
+BLUE "Installing Atom..."
+wget "https://atom.io/download/deb" -O atom.deb
+dpkg -i atom.deb
+rm atom.deb
 
-BLUE "Removing boilerplate home directories..."
-rmdir ~/Desktop ~/Documents ~/Downloads ~/Music ~/Pictures ~/Public ~/Templates ~/Videos
+BLUE "Installing Hopper..."
+wget "https://d2ap6ypl1xbe4k.cloudfront.net/Hopper-v4-4.3.14-Linux.deb"
+dpkg -i Hopper-v4-4.3.14-Linux.deb
+rm Hopper-v4-4.3.14-Linux.deb
 
-BLUE "Installing guake..."
-sudo apt-get install -y guake
-
-BLUE "Installing openvpn..."
-sudo apt-get install -y openvpn
-
-BLUE "Installing nmap..."
-sudo apt-get install -y nmap
-
-BLUE "Installing docker..."
-sudo apt-get install -y docker.io
-sudo groupadd docker
-sudo usermod -aG docker `logname`
-
-BLUE "Installing curl..."
-sudo apt-get install -y curl
-
-BLUE "Installing pinta..."
-sudo apt-get install -y pinta
-
-BLUE "Installing exiftool..."
-sudo apt-get install -y exiftool
-
-BLUE "Installing Python PIL..."
-sudo apt-get install -y python-pil
-
-BLUE "Installing sqlitebrowser..."
-sudo apt-get install -y sqlitebrowser
-
-BLUE "Installing Wireshark..."
-sudo apt-get install -y wireshark
+BLUE "Downloading stegsolve.jar..."
+wget "http://www.caesum.com/handbook/Stegsolve.jar" -O "stegsolve.jar"
+chmod +x "stegsolve.jar"
 
 BLUE "Install Real VNC Viewer..."
-wget "https://www.realvnc.com/download/file/viewer.files/VNC-Viewer-6.17.1113-Linux-x64.deb" -O vnc_viewer.deb
+wget "https://realvnc.com/download/file/viewer.files/VNC-Viewer-6.22.826-Linux-x86.deb" -O vnc_viewer.deb
 dpkg -i vnc_viewer.deb
 rm vnc_viewer.deb
 
 BLUE "Install Real VNC Connect (Server)..."
-wget 'https://www.realvnc.com/download/file/vnc.files/VNC-Server-6.2.1-Linux-x64.deb' -O vnc_server.deb
+wget 'https://realvnc.com/download/file/vnc.files/VNC-Server-6.2.1-Linux-x64.deb' -O vnc_server.deb
 dpkg -i vnc_server.deb
 rm vnc_server.deb
 
@@ -118,155 +198,11 @@ then
 	echo "systemctl start vncserver-x11-serviced.service" >> ~/etc/rc.local
 fi
 
-BLUE "Installing Atom..."
-wget "https://atom.io/download/deb" -O atom.deb
-dpkg -i atom.deb
-rm atom.deb
+# TODO: replicate kali linux zsh.
+# BLUE "Forcing a color prompt in ~/.bashrc..."
+# grep "export PS1" ~/.bashrc
+# if [ $? -eq 1 ]
+# then
+# 	echo "export PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '" >> ~/.bashrc
+# fi
 
-BLUE "Installing python-requests..."
-pip install requests
-
-BLUE "Installing idle..."
-sudo apt install -y idle
-
-BLUE "Installing xclip..."
-sudo apt install -y xclip
-grep "alias xclip" ~/.bashrc
-if [ $? -eq 1 ]
-then
-	echo "alias xclip='xclip -selection clipboard'" >> ~/.bashrc
-fi
-
-BLUE "Installing Python flask..."
-sudo pip install flask
-
-BLUE "Installing Python flask-login..."
-sudo pip install flask-login
-
-BLUE "Installing Python colorama..."
-sudo pip install colorama
-
-BLUE "Installing Python passlib..."
-sudo pip install passlib
-
-BLUE "Installing Spotify..."
-sudo snap install spotify
-
-BLUE "Installing Binwalk..."
-sudo apt install -y binwalk
-
-BLUE "Installing Tesseract..."
-sudo apt install -y tesseract-ocr
-
-BLUE "Installing foremost..."
-sudo apt install -y foremost
-
-BLUE "Installing rot13..."
-sudo apt install -y bsdgames	
-
-BLUE "Installing hexedit..."
-sudo apt install -y hexedit	
-
-BLUE "Installing Python pwntools..."
-sudo pip install pwntools
-
-BLUE "Installing Go..."
-sudo apt install -y golang-go
-BLUE "Adding GOPATH and GOBIN to .bashrc, so future installs are easy.."
-grep "export GOPATH" ~/.bashrc
-if [ $? -eq 1 ]
-then
-	echo "export GOPATH=\$HOME/.go/" >> ~/.bashrc
-fi
-grep "export GOBIN" ~/.bashrc
-if [ $? -eq 1 ]
-then
-	echo "export GOBIN=\$HOME/.go/bin" >> ~/.bashrc
-	echo "export PATH=\$PATH:\$GOBIN" >> ~/.bashrc
-fi
-
-BLUE "Installing sqlite..."
-sudo apt install -y sqlite	
-
-BLUE "Installing nikto..."
-sudo apt install -y nikto
-
-BLUE "Installing zbarimg..."
-sudo apt install -y zbar-tools	
-
-BLUE "Installing qrencode..."
-sudo apt install -y qrencode
-
-BLUE "Installing pdfcrack..."
-sudo apt install -y pdfcrack
-
-BLUE "Installing Virtualbox..."
-sudo apt install -y virtualbox-qt
-
-BLUE "Installing Vagrant..."
-sudo apt install -y vagrant
-
-BLUE "Installing Hopper..."
-wget "https://d2ap6ypl1xbe4k.cloudfront.net/Hopper-v4-4.3.14-Linux.deb"
-dpkg -i Hopper-v4-4.3.14-Linux.deb
-rm Hopper-v4-4.3.14-Linux.deb
-
-
-BLUE "Installing Oracle Java 8..."
-echo "" | sudo add-apt-repository ppa:webupd8team/java
-sudo apt-get update
-sudo apt-get install -y oracle-java8-installer
-
-BLUE "Downloading stegsolve.jar..."
-wget "http://www.caesum.com/handbook/Stegsolve.jar" -O "stegsolve.jar"
-chmod +x "stegsolve.jar"
-
-BLUE "Installing fcrackzip..."
-sudo apt install -y fcrackzip
-
-BLUE "Installing unrar..."
-sudo apt install -y unrar
-
-BLUE "Installing steghide..."
-sudo apt install -y steghide
-
-BLUE "Installing ffmpeg..."
-sudo apt install -y ffmpeg
-
-BLUE "Installing Python library netifaces..."
-sudo pip install netifaces
-
-BLUE "Installing Python library iptools..."
-sudo pip install iptools
-
-BLUE "Installing Python library OpenSSL..."
-sudo pip install pyopenssl
-
-
-BLUE "Installing Python library pydispatch..."
-sudo pip install pydispatch
-
-BLUE "Installing GIMP..."
-sudo apt install -y gimp
-
-BLUE "Installing cmake..."
-sudo apt install -y cmake
-
-BLUE "Installing mplayer..."
-sudo apt install -y mplayer
-
-
-BLUE "Installing sshpass..."
-sudo apt install -y sshpass
-
-BLUE "Installing tcpflow..."
-sudo apt install -y tcpflow
-
-BLUE "Installing Python scapy..."
-sudo pip install scapy
-
-BLUE "Installing the thing that 7z2john.pl needs..."
-sudo apt install libcompress-raw-lzma-perl 
-
-BLUE "Installing dos2unix..."
-sudo apt install libcompress-raw-lzma-perl
