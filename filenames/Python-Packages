@@ -1,0 +1,11 @@
+flask
+flask-login
+colorama
+passlib
+pwntools
+netifaces
+iptools
+pyopenssl
+pydispatch
+
+scapy
