@@ -1,1 +1,4 @@
-.ignition_key.sh.swp
+.ignition_key.sh.*
+stegsolve.jar
+test*
+added.repos
